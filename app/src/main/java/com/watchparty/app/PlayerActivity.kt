@@ -17,6 +17,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
 import org.videolan.libvlc.LibVLC
@@ -49,6 +50,7 @@ class PlayerActivity : AppCompatActivity() {
             tv.setTextColor(0xFFFFFFFF.toInt())
             tv.setBackgroundColor(0x66000000)
             tv.setPadding(16, 6, 16, 6)
+            tv.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
             tv.text = if (who.isEmpty()) text else who + ": " + text
             chatList.addView(tv)
             if (chatList.childCount > 40) chatList.removeViewAt(0)
@@ -59,25 +61,18 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun parseChat(o: Any?) {
         if (o is JSONObject) {
-            val who = o.optString("name", o.optString("user", ""))
-            var t = o.optString("text", "")
-            if (t.isEmpty()) t = o.optString("msg", "")
-            if (t.isEmpty()) t = o.optString("message", "")
+            val who = o.optString("name", "")
+            val t = o.optString("text", "")
             if (t.isNotEmpty()) addChat(who, t)
-        } else if (o is String && o.isNotEmpty()) {
-            addChat("", o)
         }
     }
 
     private fun setCount(o: Any?) {
-        var n = -1
-        if (o is Int) n = o
-        if (o is Double) n = o.toInt()
         if (o is JSONObject) {
-            n = o.optInt("count", o.optInt("n", o.optInt("total", -1)))
-        }
-        if (n >= 0) {
-            runOnUiThread { countView.text = "Viewers: " + n }
+            val n = o.optInt("n", -1)
+            if (n >= 0) {
+                runOnUiThread { countView.text = "Viewers: " + n }
+            }
         }
     }
 
@@ -90,6 +85,8 @@ class PlayerActivity : AppCompatActivity() {
 
         val info = Net.joinedInfo
         val firstUrl = info?.optString("url", "") ?: ""
+        val firstPlaying = info?.optBoolean("playing", false) ?: false
+        val firstTime = info?.optDouble("time", 0.0) ?: 0.0
         val host = Net.isHost
 
         val root = FrameLayout(this)
@@ -128,14 +125,34 @@ class PlayerActivity : AppCompatActivity() {
             )
         )
 
+        val mid = LinearLayout(this)
+        mid.orientation = LinearLayout.HORIZONTAL
+        val back = Button(this)
+        back.text = "-10"
         val pp = Button(this)
         pp.text = "II / >"
+        val fwd = Button(this)
+        fwd.text = "+10"
+        mid.addView(back)
+        mid.addView(pp)
+        mid.addView(fwd)
         val lp = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         lp.gravity = Gravity.CENTER
-        if (host) ctl.addView(pp, lp)
+        if (host) ctl.addView(mid, lp)
+
+        val chatBtn = Button(this)
+        chatBtn.text = "Chat"
+        val blp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        blp.gravity = Gravity.BOTTOM or Gravity.START
+        blp.bottomMargin = 24
+        blp.leftMargin = 24
+        ctl.addView(chatBtn, blp)
 
         root.addView(
             ctl,
@@ -175,8 +192,10 @@ class PlayerActivity : AppCompatActivity() {
         input.setHintTextColor(0xFFCCCCCC.toInt())
         input.setBackgroundColor(0x88000000.toInt())
         input.setSingleLine(true)
+        input.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         input.imeOptions =
             EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        input.visibility = View.GONE
         chatBox.addView(input)
         chatScroll = ScrollView(this)
         chatList = LinearLayout(this)
@@ -199,6 +218,9 @@ class PlayerActivity : AppCompatActivity() {
         root.addView(chatBox, clp)
         setContentView(root)
 
+        val imm =
+            getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+
         val vlc = LibVLC(this, arrayListOf("--network-caching=3000"))
         libVLC = vlc
         val mp = MediaPlayer(vlc)
@@ -215,6 +237,21 @@ class PlayerActivity : AppCompatActivity() {
             topBox.visibility = View.GONE
         }
 
+        fun sendAction(playing: Boolean, ms: Long) {
+            val o = JSONObject()
+            o.put("playing", playing)
+            o.put("time", maxOf(ms, 0L) / 1000.0)
+            Net.socket?.emit("action", o)
+        }
+
+        fun applyState(playing: Boolean, sec: Double) {
+            val ms = (sec * 1000).toLong()
+            val cur = mp.time
+            if (cur < 0 || abs(cur - ms) > 3000) mp.time = ms
+            if (playing && !mp.isPlaying) mp.play()
+            if (!playing && mp.isPlaying) mp.pause()
+        }
+
         val s = Net.socket
         s?.on("chat") { a -> parseChat(a.firstOrNull()) }
         s?.on("count") { a -> setCount(a.firstOrNull()) }
@@ -224,34 +261,93 @@ class PlayerActivity : AppCompatActivity() {
                 for (i in 0 until x.length()) parseChat(x.opt(i))
             }
         }
+        if (!host) {
+            s?.on("source") { a ->
+                val d = a.firstOrNull() as? JSONObject
+                val u = d?.optString("url", "") ?: ""
+                runOnUiThread { start(u) }
+            }
+            s?.on("action") { a ->
+                val d = a.firstOrNull() as? JSONObject
+                if (d != null) {
+                    val pl = d.optBoolean("playing", false)
+                    val t = d.optDouble("time", 0.0)
+                    runOnUiThread { applyState(pl, t) }
+                }
+            }
+        }
+
+        fun closeInput() {
+            imm.hideSoftInputFromWindow(input.windowToken, 0)
+            input.clearFocus()
+            input.visibility = View.GONE
+        }
+
+        chatBtn.setOnClickListener {
+            input.visibility = View.VISIBLE
+            input.requestFocus()
+            imm.showSoftInput(input, 0)
+            showControls()
+        }
 
         input.setOnEditorActionListener { _, _, _ ->
             val t = input.text.toString().trim()
             if (t.isNotEmpty()) {
-                val o = JSONObject()
-                o.put("text", t)
-                o.put("msg", t)
-                s?.emit("chat", o)
+                s?.emit("chat", t)
                 input.setText("")
             }
+            closeInput()
             true
         }
 
         start(firstUrl)
+        if (!host && firstUrl.isNotEmpty()) {
+            h.postDelayed({ applyState(firstPlaying, firstTime) }, 2500)
+        }
+
         go.setOnClickListener {
-            start(link.text.toString().trim())
+            val u = link.text.toString().trim()
+            if (u.isNotEmpty()) {
+                start(u)
+                val o = JSONObject()
+                o.put("mode", "link")
+                o.put("url", u)
+                Net.socket?.emit("set-source", o)
+                h.postDelayed({ sendAction(true, 0L) }, 800)
+            }
             showControls()
         }
         pp.setOnClickListener {
-            if (mp.isPlaying) mp.pause() else mp.play()
+            val will = !mp.isPlaying
+            if (will) mp.play() else mp.pause()
+            sendAction(will, mp.time)
+            showControls()
+        }
+        back.setOnClickListener {
+            val t = maxOf(mp.time - 10000, 0L)
+            mp.time = t
+            sendAction(mp.isPlaying, t)
+            showControls()
+        }
+        fwd.setOnClickListener {
+            val t = mp.time + 10000
+            mp.time = t
+            sendAction(mp.isPlaying, t)
             showControls()
         }
         video.setOnClickListener {
-            val imm =
-                getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.hideSoftInputFromWindow(input.windowToken, 0)
-            input.clearFocus()
+            closeInput()
             showControls()
+        }
+
+        if (host) {
+            val beat = object : Runnable {
+                override fun run() {
+                    if (started) sendAction(mp.isPlaying, mp.time)
+                    h.postDelayed(this, 4000)
+                }
+            }
+            h.postDelayed(beat, 4000)
         }
         showControls()
     }
