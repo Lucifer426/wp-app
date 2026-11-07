@@ -8,12 +8,16 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
+import org.json.JSONObject
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -24,12 +28,55 @@ class PlayerActivity : AppCompatActivity() {
     private var player: MediaPlayer? = null
     private val h = Handler(Looper.getMainLooper())
     private lateinit var controls: View
+    private lateinit var topBox: View
+    private lateinit var chatList: LinearLayout
+    private lateinit var chatScroll: ScrollView
+    private lateinit var countView: TextView
+    private var started = false
     private val hide = Runnable { controls.visibility = View.GONE }
 
     private fun showControls() {
         controls.visibility = View.VISIBLE
+        topBox.visibility = if (started) View.GONE else View.VISIBLE
         h.removeCallbacks(hide)
         h.postDelayed(hide, 3000)
+    }
+
+    private fun addChat(who: String, text: String) {
+        runOnUiThread {
+            val tv = TextView(this)
+            tv.setTextColor(0xFFFFFFFF.toInt())
+            tv.setBackgroundColor(0x66000000)
+            tv.setPadding(16, 6, 16, 6)
+            tv.text = if (who.isEmpty()) text else who + ": " + text
+            chatList.addView(tv)
+            if (chatList.childCount > 40) chatList.removeViewAt(0)
+            chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
+    private fun parseChat(o: Any?) {
+        if (o is JSONObject) {
+            val who = o.optString("name", o.optString("user", ""))
+            var t = o.optString("text", "")
+            if (t.isEmpty()) t = o.optString("msg", "")
+            if (t.isEmpty()) t = o.optString("message", "")
+            if (t.isNotEmpty()) addChat(who, t)
+        } else if (o is String && o.isNotEmpty()) {
+            addChat("", o)
+        }
+    }
+
+    private fun setCount(o: Any?) {
+        var n = -1
+        if (o is Int) n = o
+        if (o is Double) n = o.toInt()
+        if (o is JSONObject) {
+            n = o.optInt("count", o.optInt("n", o.optInt("total", -1)))
+        }
+        if (n >= 0) {
+            runOnUiThread { countView.text = "Viewers: " + n }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,13 +101,10 @@ class PlayerActivity : AppCompatActivity() {
         controls = ctl
 
         val top = LinearLayout(this)
+        topBox = top
         top.orientation = LinearLayout.VERTICAL
         top.setBackgroundColor(0x88000000.toInt())
         top.setPadding(24, 24, 24, 24)
-        val role = TextView(this)
-        role.setTextColor(0xFFFFFFFF.toInt())
-        role.text = if (host) "You are the host" else "You are a viewer"
-        top.addView(role)
         val link = EditText(this)
         link.hint = "Movie link"
         link.setTextColor(0xFFFFFFFF.toInt())
@@ -80,7 +124,7 @@ class PlayerActivity : AppCompatActivity() {
         )
 
         val pp = Button(this)
-        pp.text = "II / ▶"
+        pp.text = "II / >"
         val lp = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
@@ -95,6 +139,58 @@ class PlayerActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+
+        val info2 = LinearLayout(this)
+        info2.orientation = LinearLayout.VERTICAL
+        info2.setPadding(24, 12, 24, 12)
+        val role = TextView(this)
+        role.setTextColor(0xFFFFFFFF.toInt())
+        role.setBackgroundColor(0x66000000)
+        role.setPadding(12, 4, 12, 4)
+        role.text = if (host) "Host" else "Viewer"
+        countView = TextView(this)
+        countView.setTextColor(0xFFFFFFFF.toInt())
+        countView.setBackgroundColor(0x66000000)
+        countView.setPadding(12, 4, 12, 4)
+        countView.text = "Viewers: 1"
+        info2.addView(role)
+        info2.addView(countView)
+        val ilp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        ilp.gravity = Gravity.TOP or Gravity.END
+        root.addView(info2, ilp)
+
+        val chatBox = LinearLayout(this)
+        chatBox.orientation = LinearLayout.VERTICAL
+        chatScroll = ScrollView(this)
+        chatList = LinearLayout(this)
+        chatList.orientation = LinearLayout.VERTICAL
+        chatScroll.addView(chatList)
+        chatBox.addView(
+            chatScroll,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                320
+            )
+        )
+        val input = EditText(this)
+        input.hint = "Comment..."
+        input.setTextColor(0xFFFFFFFF.toInt())
+        input.setHintTextColor(0xFFCCCCCC.toInt())
+        input.setBackgroundColor(0x88000000.toInt())
+        input.setSingleLine(true)
+        input.imeOptions = EditorInfo.IME_ACTION_SEND
+        chatBox.addView(input)
+        val clp = FrameLayout.LayoutParams(
+            500,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        clp.gravity = Gravity.BOTTOM or Gravity.START
+        clp.bottomMargin = 24
+        clp.leftMargin = 24
+        root.addView(chatBox, clp)
         setContentView(root)
 
         val vlc = LibVLC(this, arrayListOf("--network-caching=3000"))
@@ -109,6 +205,30 @@ class PlayerActivity : AppCompatActivity() {
             mp.media = m
             m.release()
             mp.play()
+            started = true
+            topBox.visibility = View.GONE
+        }
+
+        val s = Net.socket
+        s?.on("chat") { a -> parseChat(a.firstOrNull()) }
+        s?.on("count") { a -> setCount(a.firstOrNull()) }
+        s?.on("history") { a ->
+            val x = a.firstOrNull()
+            if (x is JSONArray) {
+                for (i in 0 until x.length()) parseChat(x.opt(i))
+            }
+        }
+
+        input.setOnEditorActionListener { _, _, _ ->
+            val t = input.text.toString().trim()
+            if (t.isNotEmpty()) {
+                val o = JSONObject()
+                o.put("text", t)
+                o.put("msg", t)
+                s?.emit("chat", o)
+                input.setText("")
+            }
+            true
         }
 
         start(firstUrl)
