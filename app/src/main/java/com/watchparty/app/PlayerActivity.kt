@@ -2,7 +2,10 @@ package com.watchparty.app
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
@@ -19,6 +22,15 @@ import org.videolan.libvlc.util.VLCVideoLayout
 class PlayerActivity : AppCompatActivity() {
     private var libVLC: LibVLC? = null
     private var player: MediaPlayer? = null
+    private val h = Handler(Looper.getMainLooper())
+    private lateinit var controls: View
+    private val hide = Runnable { controls.visibility = View.GONE }
+
+    private fun showControls() {
+        controls.visibility = View.VISIBLE
+        h.removeCallbacks(hide)
+        h.postDelayed(hide, 3000)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,16 +50,17 @@ class PlayerActivity : AppCompatActivity() {
             )
         )
 
+        val ctl = FrameLayout(this)
+        controls = ctl
+
         val top = LinearLayout(this)
         top.orientation = LinearLayout.VERTICAL
         top.setBackgroundColor(0x88000000.toInt())
         top.setPadding(24, 24, 24, 24)
-
         val role = TextView(this)
         role.setTextColor(0xFFFFFFFF.toInt())
         role.text = if (host) "You are the host" else "You are a viewer"
         top.addView(role)
-
         val link = EditText(this)
         link.hint = "Movie link"
         link.setTextColor(0xFFFFFFFF.toInt())
@@ -58,7 +71,7 @@ class PlayerActivity : AppCompatActivity() {
             top.addView(link)
             top.addView(go)
         }
-        root.addView(
+        ctl.addView(
             top,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -67,14 +80,21 @@ class PlayerActivity : AppCompatActivity() {
         )
 
         val pp = Button(this)
-        pp.text = "Play / Pause"
+        pp.text = "II / ▶"
         val lp = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        lp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        lp.bottomMargin = 48
-        if (host) root.addView(pp, lp)
+        lp.gravity = Gravity.CENTER
+        if (host) ctl.addView(pp, lp)
+
+        root.addView(
+            ctl,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
         setContentView(root)
 
         val vlc = LibVLC(this, arrayListOf("--network-caching=3000"))
@@ -92,13 +112,20 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         start(firstUrl)
-        go.setOnClickListener { start(link.text.toString().trim()) }
+        go.setOnClickListener {
+            start(link.text.toString().trim())
+            showControls()
+        }
         pp.setOnClickListener {
             if (mp.isPlaying) mp.pause() else mp.play()
+            showControls()
         }
+        video.setOnClickListener { showControls() }
+        showControls()
     }
 
     override fun onDestroy() {
+        h.removeCallbacks(hide)
         player?.stop()
         player?.detachViews()
         player?.release()
