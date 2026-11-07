@@ -1,5 +1,12 @@
 package com.watchparty.app
 
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +22,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.math.abs
@@ -24,6 +32,65 @@ import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
+
+class IconBtn(c: Context, private val kind: Int) : View(c) {
+    var pauseIcon = false
+        set(v) {
+            field = v
+            invalidate()
+        }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ic = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    init {
+        fill.color = 0xCC0B0B0F.toInt()
+        ring.color = 0xFFD90429.toInt()
+        ring.style = Paint.Style.STROKE
+        ring.strokeWidth = 5f
+        ic.color = 0xFFFFFFFF.toInt()
+        ic.textAlign = Paint.Align.CENTER
+        ic.isFakeBoldText = true
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val cx = width / 2f
+        val cy = height / 2f
+        val r = minOf(width, height) / 2f - 4f
+        canvas.drawCircle(cx, cy, r, fill)
+        canvas.drawCircle(cx, cy, r, ring)
+        if (kind == 0 || kind == 2) {
+            ic.textSize = r * 0.65f
+            val label = if (kind == 0) "-10" else "+10"
+            canvas.drawText(label, cx, cy + r * 0.22f, ic)
+        } else if (kind == 1) {
+            if (pauseIcon) {
+                val w = r * 0.18f
+                val hh = r * 0.5f
+                canvas.drawRect(cx - w * 2f, cy - hh, cx - w * 0.5f, cy + hh, ic)
+                canvas.drawRect(cx + w * 0.5f, cy - hh, cx + w * 2f, cy + hh, ic)
+            } else {
+                val p = Path()
+                p.moveTo(cx - r * 0.25f, cy - r * 0.5f)
+                p.lineTo(cx - r * 0.25f, cy + r * 0.5f)
+                p.lineTo(cx + r * 0.55f, cy)
+                p.close()
+                canvas.drawPath(p, ic)
+            }
+        } else {
+            canvas.drawRoundRect(
+                RectF(cx - r * 0.5f, cy - r * 0.4f, cx + r * 0.5f, cy + r * 0.2f),
+                r * 0.15f, r * 0.15f, ic
+            )
+            val p = Path()
+            p.moveTo(cx - r * 0.3f, cy + r * 0.15f)
+            p.lineTo(cx - r * 0.3f, cy + r * 0.5f)
+            p.lineTo(cx + r * 0.05f, cy + r * 0.15f)
+            p.close()
+            canvas.drawPath(p, ic)
+        }
+    }
+}
 
 class PlayerActivity : AppCompatActivity() {
     private var libVLC: LibVLC? = null
@@ -44,15 +111,32 @@ class PlayerActivity : AppCompatActivity() {
         h.postDelayed(hide, 3000)
     }
 
+    private fun fmt(ms: Long): String {
+        val s = maxOf(ms, 0L) / 1000
+        val hr = s / 3600
+        val mi = (s % 3600) / 60
+        val se = s % 60
+        return if (hr > 0) String.format("%d:%02d:%02d", hr, mi, se)
+        else String.format("%02d:%02d", mi, se)
+    }
+
     private fun addChat(who: String, text: String) {
         runOnUiThread {
             val tv = TextView(this)
             tv.setTextColor(0xFFFFFFFF.toInt())
-            tv.setBackgroundColor(0x66000000)
-            tv.setPadding(16, 6, 16, 6)
+            val bg = GradientDrawable()
+            bg.setColor(0x99000000.toInt())
+            bg.cornerRadius = 28f
+            tv.background = bg
+            tv.setPadding(24, 10, 24, 10)
             tv.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
             tv.text = if (who.isEmpty()) text else who + ": " + text
-            chatList.addView(tv)
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            lp.topMargin = 8
+            chatList.addView(tv, lp)
             if (chatList.childCount > 40) chatList.removeViewAt(0)
             chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
             h.postDelayed({ chatList.removeView(tv) }, 8000)
@@ -88,6 +172,7 @@ class PlayerActivity : AppCompatActivity() {
         val firstPlaying = info?.optBoolean("playing", false) ?: false
         val firstTime = info?.optDouble("time", 0.0) ?: 0.0
         val host = Net.isHost
+        val red = 0xFFD90429.toInt()
 
         val root = FrameLayout(this)
         val video = VLCVideoLayout(this)
@@ -105,7 +190,7 @@ class PlayerActivity : AppCompatActivity() {
         val top = LinearLayout(this)
         topBox = top
         top.orientation = LinearLayout.VERTICAL
-        top.setBackgroundColor(0x88000000.toInt())
+        top.setBackgroundColor(0xAA000000.toInt())
         top.setPadding(24, 24, 24, 24)
         val link = EditText(this)
         link.hint = "Movie link"
@@ -113,6 +198,11 @@ class PlayerActivity : AppCompatActivity() {
         link.setHintTextColor(0xFFCCCCCC.toInt())
         val go = Button(this)
         go.text = "Play"
+        go.setTextColor(0xFFFFFFFF.toInt())
+        val gbg = GradientDrawable()
+        gbg.setColor(red)
+        gbg.cornerRadius = 24f
+        go.background = gbg
         if (host) {
             top.addView(link)
             top.addView(go)
@@ -127,32 +217,54 @@ class PlayerActivity : AppCompatActivity() {
 
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
-        val back = Button(this)
-        back.text = "-10"
-        val pp = Button(this)
-        pp.text = "II / >"
-        val fwd = Button(this)
-        fwd.text = "+10"
-        mid.addView(back)
-        mid.addView(pp)
-        mid.addView(fwd)
-        val lp = FrameLayout.LayoutParams(
+        val back = IconBtn(this, 0)
+        val pp = IconBtn(this, 1)
+        val fwd = IconBtn(this, 2)
+        for (b in listOf(back, pp, fwd)) {
+            val blp = LinearLayout.LayoutParams(150, 150)
+            blp.leftMargin = 24
+            blp.rightMargin = 24
+            mid.addView(b, blp)
+        }
+        val mlp = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        lp.gravity = Gravity.CENTER
-        if (host) ctl.addView(mid, lp)
+        mlp.gravity = Gravity.CENTER
+        if (host) ctl.addView(mid, mlp)
 
-        val chatBtn = Button(this)
-        chatBtn.text = "Chat"
-        val blp = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.gravity = Gravity.CENTER_VERTICAL
+        val timeText = TextView(this)
+        timeText.setTextColor(0xFFFFFFFF.toInt())
+        timeText.text = "00:00 / 00:00"
+        val seek = SeekBar(this)
+        seek.max = 1000
+        seek.progressTintList = ColorStateList.valueOf(red)
+        seek.thumbTintList = ColorStateList.valueOf(red)
+        seek.isEnabled = host
+        bar.addView(timeText)
+        bar.addView(
+            seek,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        val barLp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        blp.gravity = Gravity.BOTTOM or Gravity.START
-        blp.bottomMargin = 24
-        blp.leftMargin = 24
-        ctl.addView(chatBtn, blp)
+        barLp.gravity = Gravity.BOTTOM
+        barLp.leftMargin = 24
+        barLp.rightMargin = 220
+        barLp.bottomMargin = 50
+        ctl.addView(bar, barLp)
+
+        val chatBtn = IconBtn(this, 3)
+        val chatLp = FrameLayout.LayoutParams(130, 130)
+        chatLp.gravity = Gravity.BOTTOM or Gravity.END
+        chatLp.bottomMargin = 24
+        chatLp.rightMargin = 32
+        ctl.addView(chatBtn, chatLp)
 
         root.addView(
             ctl,
@@ -162,18 +274,30 @@ class PlayerActivity : AppCompatActivity() {
             )
         )
 
+        val flash = IconBtn(this, 1)
+        flash.alpha = 0f
+        val flp = FrameLayout.LayoutParams(260, 260)
+        flp.gravity = Gravity.CENTER
+        root.addView(flash, flp)
+
         val info2 = LinearLayout(this)
         info2.orientation = LinearLayout.VERTICAL
         info2.setPadding(24, 12, 24, 12)
         val role = TextView(this)
         role.setTextColor(0xFFFFFFFF.toInt())
-        role.setBackgroundColor(0x66000000)
-        role.setPadding(12, 4, 12, 4)
+        val rbg = GradientDrawable()
+        rbg.setColor(0x99000000.toInt())
+        rbg.cornerRadius = 20f
+        role.background = rbg
+        role.setPadding(20, 6, 20, 6)
         role.text = if (host) "Host" else "Viewer"
         countView = TextView(this)
         countView.setTextColor(0xFFFFFFFF.toInt())
-        countView.setBackgroundColor(0x66000000)
-        countView.setPadding(12, 4, 12, 4)
+        val cbg = GradientDrawable()
+        cbg.setColor(0x99000000.toInt())
+        cbg.cornerRadius = 20f
+        countView.background = cbg
+        countView.setPadding(20, 6, 20, 6)
         countView.text = "Viewers: 1"
         info2.addView(role)
         info2.addView(countView)
@@ -190,7 +314,11 @@ class PlayerActivity : AppCompatActivity() {
         input.hint = "Comment..."
         input.setTextColor(0xFFFFFFFF.toInt())
         input.setHintTextColor(0xFFCCCCCC.toInt())
-        input.setBackgroundColor(0x88000000.toInt())
+        val ibg = GradientDrawable()
+        ibg.setColor(0xAA000000.toInt())
+        ibg.cornerRadius = 28f
+        input.background = ibg
+        input.setPadding(28, 16, 28, 16)
         input.setSingleLine(true)
         input.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         input.imeOptions =
@@ -227,6 +355,15 @@ class PlayerActivity : AppCompatActivity() {
         player = mp
         mp.attachViews(video, null, false, false)
 
+        var dragging = false
+
+        fun flashIcon(playing: Boolean) {
+            flash.pauseIcon = !playing
+            flash.animate().cancel()
+            flash.alpha = 1f
+            flash.animate().alpha(0f).setStartDelay(400).setDuration(500).start()
+        }
+
         fun start(u: String) {
             if (u.isEmpty()) return
             val m = Media(vlc, Uri.parse(u))
@@ -252,9 +389,11 @@ class PlayerActivity : AppCompatActivity() {
         fun applyState(playing: Boolean, sec: Double) {
             val ms = (sec * 1000).toLong()
             val cur = mp.time
+            val was = mp.isPlaying
             if (!playing && mp.isPlaying) mp.pause()
             if (cur < 0 || abs(cur - ms) > 1000) mp.time = ms
             if (playing && !mp.isPlaying) mp.play()
+            if (was != playing) flashIcon(playing)
         }
 
         val s = Net.socket
@@ -305,6 +444,35 @@ class PlayerActivity : AppCompatActivity() {
             true
         }
 
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                sb: SeekBar?, p: Int, fromUser: Boolean
+            ) {
+                if (fromUser) {
+                    val len = mp.length
+                    timeText.text =
+                        fmt(p.toLong() * len / 1000) + " / " + fmt(len)
+                }
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {
+                dragging = true
+                h.removeCallbacks(hide)
+            }
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                dragging = false
+                val len = mp.length
+                val p = sb?.progress ?: 0
+                if (len > 0) {
+                    val t = p.toLong() * len / 1000
+                    mp.time = t
+                    sendTwice(mp.isPlaying, t)
+                }
+                showControls()
+            }
+        })
+
         start(firstUrl)
         if (!host && firstUrl.isNotEmpty()) {
             h.postDelayed({ applyState(firstPlaying, firstTime) }, 2500)
@@ -325,6 +493,8 @@ class PlayerActivity : AppCompatActivity() {
         pp.setOnClickListener {
             val will = !mp.isPlaying
             if (will) mp.play() else mp.pause()
+            flashIcon(will)
+            pp.pauseIcon = will
             sendTwice(will, mp.time)
             showControls()
         }
@@ -344,6 +514,22 @@ class PlayerActivity : AppCompatActivity() {
             closeInput()
             showControls()
         }
+
+        val ticker = object : Runnable {
+            override fun run() {
+                if (started) {
+                    val len = mp.length
+                    val t = mp.time
+                    if (!dragging && len > 0) {
+                        seek.progress = (t * 1000 / len).toInt()
+                        timeText.text = fmt(t) + " / " + fmt(len)
+                    }
+                    pp.pauseIcon = mp.isPlaying
+                }
+                h.postDelayed(this, 500)
+            }
+        }
+        h.postDelayed(ticker, 500)
 
         if (host) {
             val beat = object : Runnable {
