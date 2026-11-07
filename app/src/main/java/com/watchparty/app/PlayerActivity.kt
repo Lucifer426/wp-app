@@ -244,12 +244,17 @@ class PlayerActivity : AppCompatActivity() {
             Net.socket?.emit("action", o)
         }
 
+        fun sendTwice(playing: Boolean, ms: Long) {
+            sendAction(playing, ms)
+            h.postDelayed({ sendAction(mp.isPlaying, mp.time) }, 1000)
+        }
+
         fun applyState(playing: Boolean, sec: Double) {
             val ms = (sec * 1000).toLong()
             val cur = mp.time
-            if (cur < 0 || abs(cur - ms) > 3000) mp.time = ms
-            if (playing && !mp.isPlaying) mp.play()
             if (!playing && mp.isPlaying) mp.pause()
+            if (cur < 0 || abs(cur - ms) > 1000) mp.time = ms
+            if (playing && !mp.isPlaying) mp.play()
         }
 
         val s = Net.socket
@@ -320,19 +325,19 @@ class PlayerActivity : AppCompatActivity() {
         pp.setOnClickListener {
             val will = !mp.isPlaying
             if (will) mp.play() else mp.pause()
-            sendAction(will, mp.time)
+            sendTwice(will, mp.time)
             showControls()
         }
         back.setOnClickListener {
             val t = maxOf(mp.time - 10000, 0L)
             mp.time = t
-            sendAction(mp.isPlaying, t)
+            sendTwice(mp.isPlaying, t)
             showControls()
         }
         fwd.setOnClickListener {
             val t = mp.time + 10000
             mp.time = t
-            sendAction(mp.isPlaying, t)
+            sendTwice(mp.isPlaying, t)
             showControls()
         }
         video.setOnClickListener {
@@ -344,10 +349,10 @@ class PlayerActivity : AppCompatActivity() {
             val beat = object : Runnable {
                 override fun run() {
                     if (started) sendAction(mp.isPlaying, mp.time)
-                    h.postDelayed(this, 4000)
+                    h.postDelayed(this, 2000)
                 }
             }
-            h.postDelayed(beat, 4000)
+            h.postDelayed(beat, 2000)
         }
         showControls()
     }
