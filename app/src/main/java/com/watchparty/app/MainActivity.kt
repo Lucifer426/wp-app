@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
             go.isEnabled = false
             card.animate().alpha(0f).setDuration(500).start()
             scene.zoomIn {
-                startActivity(Intent(this, JoinActivity::class.java))
+                                startActivity(Intent(this, StoryActivity::class.java))
             }
         }
     }
