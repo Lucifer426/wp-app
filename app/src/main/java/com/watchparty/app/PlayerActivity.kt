@@ -47,7 +47,7 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
         fill.color = 0xCC0B0B0F.toInt()
         ring.color = 0xFFD90429.toInt()
         ring.style = Paint.Style.STROKE
-        ring.strokeWidth = 5f
+        ring.strokeWidth = 4f
         ic.color = 0xFFFFFFFF.toInt()
         ic.textAlign = Paint.Align.CENTER
         ic.isFakeBoldText = true
@@ -101,6 +101,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var chatList: LinearLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var countView: TextView
+    private lateinit var waitView: TextView
     private var started = false
     private val hide = Runnable { controls.visibility = View.GONE }
 
@@ -221,9 +222,9 @@ class PlayerActivity : AppCompatActivity() {
         val pp = IconBtn(this, 1)
         val fwd = IconBtn(this, 2)
         for (b in listOf(back, pp, fwd)) {
-            val blp = LinearLayout.LayoutParams(150, 150)
-            blp.leftMargin = 24
-            blp.rightMargin = 24
+            val blp = LinearLayout.LayoutParams(96, 96)
+            blp.leftMargin = 16
+            blp.rightMargin = 16
             mid.addView(b, blp)
         }
         val mlp = FrameLayout.LayoutParams(
@@ -255,14 +256,14 @@ class PlayerActivity : AppCompatActivity() {
         )
         barLp.gravity = Gravity.BOTTOM
         barLp.leftMargin = 24
-        barLp.rightMargin = 220
+        barLp.rightMargin = 170
         barLp.bottomMargin = 50
         ctl.addView(bar, barLp)
 
         val chatBtn = IconBtn(this, 3)
-        val chatLp = FrameLayout.LayoutParams(130, 130)
+        val chatLp = FrameLayout.LayoutParams(96, 96)
         chatLp.gravity = Gravity.BOTTOM or Gravity.END
-        chatLp.bottomMargin = 24
+        chatLp.bottomMargin = 40
         chatLp.rightMargin = 32
         ctl.addView(chatBtn, chatLp)
 
@@ -276,9 +277,27 @@ class PlayerActivity : AppCompatActivity() {
 
         val flash = IconBtn(this, 1)
         flash.alpha = 0f
-        val flp = FrameLayout.LayoutParams(260, 260)
+        val flp = FrameLayout.LayoutParams(200, 200)
         flp.gravity = Gravity.CENTER
         root.addView(flash, flp)
+
+        waitView = TextView(this)
+        waitView.setTextColor(0xFFFFFFFF.toInt())
+        waitView.textSize = 18f
+        val wbg = GradientDrawable()
+        wbg.setColor(0xAA000000.toInt())
+        wbg.cornerRadius = 28f
+        waitView.background = wbg
+        waitView.setPadding(40, 20, 40, 20)
+        waitView.text = "منتظر سازنده اتاق..."
+        waitView.visibility =
+            if (!host && firstUrl.isEmpty()) View.VISIBLE else View.GONE
+        val wlp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        wlp.gravity = Gravity.CENTER
+        root.addView(waitView, wlp)
 
         val info2 = LinearLayout(this)
         info2.orientation = LinearLayout.VERTICAL
@@ -298,7 +317,7 @@ class PlayerActivity : AppCompatActivity() {
         cbg.cornerRadius = 20f
         countView.background = cbg
         countView.setPadding(20, 6, 20, 6)
-        countView.text = "Viewers: 1"
+        countView.text = "Viewers: " + Net.lastCount
         info2.addView(role)
         info2.addView(countView)
         val ilp = FrameLayout.LayoutParams(
@@ -346,6 +365,12 @@ class PlayerActivity : AppCompatActivity() {
         root.addView(chatBox, clp)
         setContentView(root)
 
+        val hist = Net.history
+        if (hist != null) {
+            val from = maxOf(0, hist.length() - 5)
+            for (i in from until hist.length()) parseChat(hist.opt(i))
+        }
+
         val imm =
             getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
 
@@ -356,6 +381,8 @@ class PlayerActivity : AppCompatActivity() {
         mp.attachViews(video, null, false, false)
 
         var dragging = false
+        var reattached = false
+        var allowBeat = true
 
         fun flashIcon(playing: Boolean) {
             flash.pauseIcon = !playing
@@ -371,7 +398,17 @@ class PlayerActivity : AppCompatActivity() {
             m.release()
             mp.play()
             started = true
+            waitView.visibility = View.GONE
             topBox.visibility = View.GONE
+            if (host && !reattached) {
+                reattached = true
+                h.postDelayed({
+                    val t = mp.time
+                    mp.detachViews()
+                    mp.attachViews(video, null, false, false)
+                    if (t > 0) mp.time = t
+                }, 2500)
+            }
         }
 
         fun sendAction(playing: Boolean, ms: Long) {
@@ -402,7 +439,8 @@ class PlayerActivity : AppCompatActivity() {
         s?.on("history") { a ->
             val x = a.firstOrNull()
             if (x is JSONArray) {
-                for (i in 0 until x.length()) parseChat(x.opt(i))
+                val from = maxOf(0, x.length() - 5)
+                for (i in from until x.length()) parseChat(x.opt(i))
             }
         }
         if (!host) {
@@ -417,6 +455,21 @@ class PlayerActivity : AppCompatActivity() {
                     val pl = d.optBoolean("playing", false)
                     val t = d.optDouble("time", 0.0)
                     runOnUiThread { applyState(pl, t) }
+                }
+            }
+            s?.on("host-left") {
+                runOnUiThread {
+                    waitView.text = "سازنده خارج شد؛ منتظر بازگشت..."
+                    waitView.visibility = View.VISIBLE
+                }
+            }
+            s?.on("host-joined") {
+                runOnUiThread {
+                    if (started) {
+                        waitView.visibility = View.GONE
+                    } else {
+                        waitView.text = "منتظر انتخاب فیلم..."
+                    }
                 }
             }
         }
@@ -473,20 +526,34 @@ class PlayerActivity : AppCompatActivity() {
             }
         })
 
-        start(firstUrl)
-        if (!host && firstUrl.isNotEmpty()) {
-            h.postDelayed({ applyState(firstPlaying, firstTime) }, 2500)
+        h.postDelayed({ start(firstUrl) }, 600)
+        if (firstUrl.isNotEmpty()) {
+            if (host) {
+                if (firstTime > 1.0) {
+                    allowBeat = false
+                    h.postDelayed({
+                        mp.time = (firstTime * 1000).toLong()
+                        allowBeat = true
+                    }, 4500)
+                }
+            } else {
+                h.postDelayed({ applyState(firstPlaying, firstTime) }, 3000)
+            }
         }
 
         go.setOnClickListener {
             val u = link.text.toString().trim()
             if (u.isNotEmpty()) {
-                start(u)
-                val o = JSONObject()
-                o.put("mode", "link")
-                o.put("url", u)
-                Net.socket?.emit("set-source", o)
-                h.postDelayed({ sendAction(true, 0L) }, 800)
+                imm.hideSoftInputFromWindow(link.windowToken, 0)
+                link.clearFocus()
+                h.postDelayed({
+                    start(u)
+                    val o = JSONObject()
+                    o.put("mode", "link")
+                    o.put("url", u)
+                    Net.socket?.emit("set-source", o)
+                    h.postDelayed({ sendAction(true, 0L) }, 800)
+                }, 400)
             }
             showControls()
         }
@@ -534,7 +601,7 @@ class PlayerActivity : AppCompatActivity() {
         if (host) {
             val beat = object : Runnable {
                 override fun run() {
-                    if (started) sendAction(mp.isPlaying, mp.time)
+                    if (started && allowBeat) sendAction(mp.isPlaying, mp.time)
                     h.postDelayed(this, 2000)
                 }
             }
