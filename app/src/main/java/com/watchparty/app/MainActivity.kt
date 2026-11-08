@@ -5,124 +5,86 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
-import android.widget.*
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import io.socket.client.Socket
-import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var status: TextView
-
-    private fun field(hint: String): EditText {
-        val e = EditText(this)
-        e.hint = hint
-        e.setTextColor(Color.WHITE)
-        e.setHintTextColor(0xFF999999.toInt())
-        e.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
-        e.setPadding(32, 28, 32, 28)
-        val bg = GradientDrawable()
-        bg.setColor(0x33FFFFFF)
-        bg.cornerRadius = 24f
-        e.background = bg
-        val lp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        lp.topMargin = 24
-        e.layoutParams = lp
-        return e
-    }
+    private lateinit var scene: IntroView
+    private lateinit var card: LinearLayout
+    private lateinit var go: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = 0xFF04060F.toInt()
         val root = FrameLayout(this)
-        root.addView(BgView(this))
-
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.VERTICAL
-        box.gravity = Gravity.CENTER
-        box.setPadding(96, 48, 96, 48)
-
-        val title = TextView(this)
-        title.text = "فیلم پارتی"
-        title.textSize = 34f
-        title.setTextColor(0xFFD90429.toInt())
-        title.gravity = Gravity.CENTER
-        box.addView(title)
-
-        val name = field("اسم تو")
-        val room = field("اسم اتاق")
-        val max = field("سقف نفرات (۲ تا ۵)")
-        max.setText("5")
-        box.addView(name)
-        box.addView(room)
-        box.addView(max)
-
-        val btn = Button(this)
-        btn.text = "ورود"
-        btn.setTextColor(Color.WHITE)
-        val bb = GradientDrawable()
-        bb.setColor(0xFFD90429.toInt())
-        bb.cornerRadius = 24f
-        btn.background = bb
-        val blp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        blp.topMargin = 48
-        box.addView(btn, blp)
-
-        status = TextView(this)
-        status.setTextColor(0xFFCCCCCC.toInt())
-        status.gravity = Gravity.CENTER
-        status.setPadding(0, 24, 0, 0)
-        box.addView(status)
-
+        scene = IntroView(this)
         root.addView(
-            box,
+            scene,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+
+        card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.gravity = Gravity.CENTER
+        card.setPadding(40, 44, 40, 44)
+        val cbg = GradientDrawable()
+        cbg.setColor(0xDD0B0B0F.toInt())
+        cbg.setStroke(3, 0xFFD90429.toInt())
+        cbg.cornerRadius = 40f
+        card.background = cbg
+
+        val tv = TextView(this)
+        tv.text = "تماشای فیلم بصورت آنلاین و گروهی"
+        tv.textSize = 19f
+        tv.setTextColor(Color.WHITE)
+        tv.gravity = Gravity.CENTER
+        card.addView(tv)
+
+        go = Button(this)
+        go.text = "بزن بریم"
+        go.textSize = 18f
+        go.setTextColor(Color.WHITE)
+        val gbg = GradientDrawable()
+        gbg.setColor(0xFFD90429.toInt())
+        gbg.cornerRadius = 60f
+        go.background = gbg
+        val glp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        glp.topMargin = 36
+        card.addView(go, glp)
+
+        val dm = resources.displayMetrics
+        val clp = FrameLayout.LayoutParams(
+            (dm.widthPixels * 0.54f).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        clp.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
+        clp.topMargin = (dm.heightPixels * 0.52f).toInt()
+        root.addView(card, clp)
         setContentView(root)
 
-        btn.setOnClickListener {
-            val m = max.text.toString().toIntOrNull() ?: 5
-            join(name.text.toString(), room.text.toString(), m)
-        }
-    }
-
-    private fun say(t: String) {
-        runOnUiThread { status.text = t }
-    }
-
-    private fun join(n: String, r: String, m: Int) {
-        val s = Net.create()
-        s.on(Socket.EVENT_CONNECT) {
-            say("در حال ورود...")
-            val o = JSONObject()
-            o.put("name", n)
-            o.put("room", r)
-            o.put("max", m)
-            s.emit("join", o)
-        }
-        s.on(Socket.EVENT_CONNECT_ERROR) {
-            say("خطای اتصال: " + it.firstOrNull())
-        }
-        s.on("full") {
-            say("اتاق پر است")
-        }
-        s.on("joined") {
-            val d = it.firstOrNull() as? JSONObject
-            Net.joinedInfo = d
-            Net.isHost = d?.optBoolean("host", false) ?: false
-            runOnUiThread {
-                startActivity(Intent(this, PlayerActivity::class.java))
+        go.setOnClickListener {
+            go.isEnabled = false
+            card.animate().alpha(0f).setDuration(500).start()
+            scene.zoomIn {
+                startActivity(Intent(this, JoinActivity::class.java))
             }
         }
-        s.connect()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        scene.reset()
+        card.alpha = 1f
+        go.isEnabled = true
     }
 }
