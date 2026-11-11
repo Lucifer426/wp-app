@@ -9,6 +9,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +29,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
@@ -120,6 +124,23 @@ class PlayerActivity : AppCompatActivity() {
     private var lastBack = 0L
     private val hide = Runnable { controls.visibility = View.GONE }
 
+    private fun goFullscreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        val c = WindowInsetsControllerCompat(window, window.decorView)
+        c.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        c.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) goFullscreen()
+    }
+
     private fun showControls() {
         controls.visibility = View.VISIBLE
         topBox.visibility = if (started) View.GONE else View.VISIBLE
@@ -192,6 +213,7 @@ class PlayerActivity : AppCompatActivity() {
         window.setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         )
+        goFullscreen()
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -220,6 +242,7 @@ class PlayerActivity : AppCompatActivity() {
         val red = 0xFFD90429.toInt()
 
         val root = FrameLayout(this)
+        root.setBackgroundColor(0xFF000000.toInt())
         val video = VLCVideoLayout(this)
         root.addView(
             video,
@@ -256,14 +279,14 @@ class PlayerActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        topLp.topMargin = 110
+        topLp.topMargin = 130
         ctl.addView(top, topLp)
 
         val backBtn = IconBtn(this, 4)
         val backLp = FrameLayout.LayoutParams(80, 80)
         backLp.gravity = Gravity.TOP or Gravity.START
-        backLp.topMargin = 16
-        backLp.leftMargin = 24
+        backLp.topMargin = 24
+        backLp.leftMargin = 48
         ctl.addView(backBtn, backLp)
 
         val mid = LinearLayout(this)
@@ -305,8 +328,8 @@ class PlayerActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         barLp.gravity = Gravity.BOTTOM
-        barLp.leftMargin = 24
-        barLp.rightMargin = 170
+        barLp.leftMargin = 48
+        barLp.rightMargin = 190
         barLp.bottomMargin = 50
         ctl.addView(bar, barLp)
 
@@ -314,7 +337,7 @@ class PlayerActivity : AppCompatActivity() {
         val chatLp = FrameLayout.LayoutParams(96, 96)
         chatLp.gravity = Gravity.BOTTOM or Gravity.END
         chatLp.bottomMargin = 40
-        chatLp.rightMargin = 32
+        chatLp.rightMargin = 48
         ctl.addView(chatBtn, chatLp)
 
         root.addView(
@@ -375,6 +398,8 @@ class PlayerActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         ilp.gravity = Gravity.TOP or Gravity.END
+        ilp.topMargin = 12
+        ilp.rightMargin = 24
         root.addView(info2, ilp)
 
         val chatBox = LinearLayout(this)
@@ -410,8 +435,8 @@ class PlayerActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         clp.gravity = Gravity.TOP or Gravity.START
-        clp.topMargin = 110
-        clp.leftMargin = 24
+        clp.topMargin = 130
+        clp.leftMargin = 48
         root.addView(chatBox, clp)
         setContentView(root)
 
@@ -424,11 +449,18 @@ class PlayerActivity : AppCompatActivity() {
         val imm =
             getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
 
-        val vlc = LibVLC(this, arrayListOf("--network-caching=3000"))
+        val vlc = LibVLC(
+            this,
+            arrayListOf(
+                "--network-caching=3000",
+                "--freetype-rel-fontsize=16",
+                "--subsdec-encoding=UTF-8"
+            )
+        )
         libVLC = vlc
         val mp = MediaPlayer(vlc)
         player = mp
-        mp.attachViews(video, null, false, false)
+        mp.attachViews(video, null, true, false)
 
         var dragging = false
         var reattached = false
@@ -472,7 +504,7 @@ class PlayerActivity : AppCompatActivity() {
             started = true
             waitView.visibility = View.GONE
             topBox.visibility = View.GONE
-            for (d in longArrayOf(2500, 5000, 9000, 15000)) {
+            for (d in longArrayOf(2500, 5000, 9000, 15000, 25000)) {
                 h.postDelayed({ pickSub() }, d)
             }
             if (host && !reattached) {
@@ -480,7 +512,7 @@ class PlayerActivity : AppCompatActivity() {
                 h.postDelayed({
                     val t = mp.time
                     mp.detachViews()
-                    mp.attachViews(video, null, false, false)
+                    mp.attachViews(video, null, true, false)
                     if (t > 0) mp.time = t
                 }, 2500)
             }
