@@ -1,6 +1,7 @@
 package com.watchparty.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -24,6 +25,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.math.abs
 import org.json.JSONArray
@@ -77,6 +80,17 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
                 p.close()
                 canvas.drawPath(p, ic)
             }
+        } else if (kind == 4) {
+            ic.style = Paint.Style.STROKE
+            ic.strokeWidth = r * 0.16f
+            ic.strokeCap = Paint.Cap.ROUND
+            val p = Path()
+            p.moveTo(cx + r * 0.1f, cy - r * 0.42f)
+            p.lineTo(cx - r * 0.3f, cy)
+            p.lineTo(cx + r * 0.1f, cy + r * 0.42f)
+            canvas.drawPath(p, ic)
+            canvas.drawLine(cx - r * 0.3f, cy, cx + r * 0.45f, cy, ic)
+            ic.style = Paint.Style.FILL
         } else {
             canvas.drawRoundRect(
                 RectF(cx - r * 0.5f, cy - r * 0.4f, cx + r * 0.5f, cy + r * 0.2f),
@@ -103,6 +117,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var countView: TextView
     private lateinit var waitView: TextView
     private var started = false
+    private var lastBack = 0L
     private val hide = Runnable { controls.visibility = View.GONE }
 
     private fun showControls() {
@@ -110,6 +125,16 @@ class PlayerActivity : AppCompatActivity() {
         topBox.visibility = if (started) View.GONE else View.VISIBLE
         h.removeCallbacks(hide)
         h.postDelayed(hide, 3000)
+    }
+
+    private fun leave() {
+        h.removeCallbacksAndMessages(null)
+        Net.socket?.disconnect()
+        Net.inRoom = false
+        val i = Intent(this, StoryActivity::class.java)
+        i.putExtra("skip", true)
+        startActivity(i)
+        finish()
     }
 
     private fun fmt(ms: Long): String {
@@ -168,6 +193,25 @@ class PlayerActivity : AppCompatActivity() {
             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         )
 
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    val now = System.currentTimeMillis()
+                    if (now - lastBack < 2000) {
+                        leave()
+                    } else {
+                        lastBack = now
+                        Toast.makeText(
+                            this@PlayerActivity,
+                            "دوباره بزن تا از اتاق خارج شی",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        )
+
         val info = Net.joinedInfo
         val firstUrl = info?.optString("url", "") ?: ""
         val firstPlaying = info?.optBoolean("playing", false) ?: false
@@ -208,13 +252,19 @@ class PlayerActivity : AppCompatActivity() {
             top.addView(link)
             top.addView(go)
         }
-        ctl.addView(
-            top,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+        val topLp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
         )
+        topLp.topMargin = 110
+        ctl.addView(top, topLp)
+
+        val backBtn = IconBtn(this, 4)
+        val backLp = FrameLayout.LayoutParams(80, 80)
+        backLp.gravity = Gravity.TOP or Gravity.START
+        backLp.topMargin = 16
+        backLp.leftMargin = 24
+        ctl.addView(backBtn, backLp)
 
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
@@ -360,7 +410,7 @@ class PlayerActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         clp.gravity = Gravity.TOP or Gravity.START
-        clp.topMargin = 100
+        clp.topMargin = 110
         clp.leftMargin = 24
         root.addView(chatBox, clp)
         setContentView(root)
@@ -391,6 +441,28 @@ class PlayerActivity : AppCompatActivity() {
             flash.animate().alpha(0f).setStartDelay(400).setDuration(500).start()
         }
 
+        fun pickSub() {
+            try {
+                val tracks = mp.spuTracks ?: return
+                if (tracks.isEmpty()) return
+                if (mp.spuTrack != -1) return
+                var best = -1
+                for (t in tracks) {
+                    if (t.id == -1) continue
+                    val n = (t.name ?: "").lowercase()
+                    if (best == -1) best = t.id
+                    if (n.contains("fa") || n.contains("per") ||
+                        n.contains("فارسی")
+                    ) {
+                        best = t.id
+                        break
+                    }
+                }
+                if (best != -1) mp.spuTrack = best
+            } catch (e: Exception) {
+            }
+        }
+
         fun start(u: String) {
             if (u.isEmpty()) return
             val m = Media(vlc, Uri.parse(u))
@@ -400,6 +472,9 @@ class PlayerActivity : AppCompatActivity() {
             started = true
             waitView.visibility = View.GONE
             topBox.visibility = View.GONE
+            for (d in longArrayOf(2500, 5000, 9000, 15000)) {
+                h.postDelayed({ pickSub() }, d)
+            }
             if (host && !reattached) {
                 reattached = true
                 h.postDelayed({
@@ -479,6 +554,8 @@ class PlayerActivity : AppCompatActivity() {
             input.clearFocus()
             input.visibility = View.GONE
         }
+
+        backBtn.setOnClickListener { leave() }
 
         chatBtn.setOnClickListener {
             input.visibility = View.VISIBLE
