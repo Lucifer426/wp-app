@@ -101,7 +101,18 @@ class StoryView(c: Context) : View(c) {
     fun panicMode() {
         anim(1400, null, { panic = it; danger = 0.25f + 0.5f * it }) { }
     }
-
+    
+    fun jumpToEnd() {
+        scene = 1
+        approach = 1f
+        panic = 1f
+        danger = 0.75f
+        veil = 0f
+        flash = 0f
+        doorOpen = 0f
+        carIn = 0f
+    }
+    
     fun openDoor(done: () -> Unit) {
         anim(2400, null, { doorOpen = it }) {
             anim(1500, AccelerateInterpolator(), { carIn = it }) {
