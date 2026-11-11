@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import io.socket.client.Socket
 import org.json.JSONArray
@@ -43,6 +44,8 @@ class StoryActivity : AppCompatActivity() {
     private var roomV = ""
     private var maxV = 5
     private var joining = false
+    private var busy = false
+    private var step = 0
     private var onOk: (String) -> Unit = {}
     private val red = 0xFFD90429.toInt()
 
@@ -178,7 +181,36 @@ class StoryActivity : AppCompatActivity() {
             true
         }
 
-        h.postDelayed({ sv.landDragons { showRoles() } }, 2000)
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (busy) return
+                    when {
+                        joining -> {
+                            joining = false
+                            Net.socket?.disconnect()
+                            status.text = ""
+                            askRoom()
+                        }
+                        step == 3 -> askRoom()
+                        step == 2 -> askName(true)
+                        else -> finish()
+                    }
+                }
+            }
+        )
+
+        val skip = intent.getBooleanExtra("skip", false)
+        if (skip) {
+            role = prefs.getString("role", "host") ?: "host"
+            nameV = prefs.getString("name", "") ?: ""
+            if (nameV.isEmpty()) nameV = "ناشناس"
+            sv.jumpToEnd()
+            h.postDelayed({ askRoom() }, 300)
+        } else {
+            h.postDelayed({ sv.landDragons { showRoles() } }, 2000)
+        }
     }
 
     private fun submit() {
@@ -230,22 +262,30 @@ class StoryActivity : AppCompatActivity() {
         }
         sv.flyOut(r == "host") {
             sv.toChase {
-                sv.arrive { askName() }
+                sv.arrive { askName(false) }
             }
         }
     }
 
-    private fun askName() {
-        showPrompt("نام شما", prefs.getString("name", "") ?: "", false) { v ->
+    private fun askName(again: Boolean) {
+        step = 1
+        val preset = if (nameV.isNotEmpty()) nameV else (prefs.getString("name", "") ?: "")
+        showPrompt("نام شما", preset, false) { v ->
             nameV = if (v.isEmpty()) "ناشناس" else v
             hidePanel()
-            sv.panicMode()
-            h.postDelayed({ askRoom() }, 1700)
+            if (again) {
+                h.postDelayed({ askRoom() }, 350)
+            } else {
+                sv.panicMode()
+                h.postDelayed({ askRoom() }, 1700)
+            }
         }
     }
 
     private fun askRoom() {
-        showPrompt("رمز اتاق", prefs.getString("room", "") ?: "", false) { v ->
+        step = 2
+        val preset = if (roomV.isNotEmpty()) roomV else (prefs.getString("room", "") ?: "")
+        showPrompt("رمز اتاق", preset, false) { v ->
             if (v.isEmpty()) {
                 status.text = "رمز اتاق را بنویس"
             } else {
@@ -256,6 +296,7 @@ class StoryActivity : AppCompatActivity() {
     }
 
     private fun askMax() {
+        step = 3
         showPrompt("سقف نفرات (۲ تا ۵)", prefs.getString("max", "5") ?: "5", true) { v ->
             maxV = (v.toIntOrNull() ?: 5).coerceIn(2, 5)
             doJoin()
@@ -310,6 +351,7 @@ class StoryActivity : AppCompatActivity() {
             if (!Net.inRoom) {
                 Net.inRoom = true
                 joining = false
+                busy = true
                 runOnUiThread {
                     status.text = ""
                     sv.openDoor {
