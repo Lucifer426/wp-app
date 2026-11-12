@@ -325,11 +325,11 @@ class StoryActivity : AppCompatActivity() {
                     }
                 }
                 val f = field(
-                    b, 0.40f, 0.35f, 0.84f, 0.46f, "رمز اتاق",
+                    b, 0.14f, 0.41f, 0.90f, 0.49f, "رمز اتاق",
                     if (roomV.isNotEmpty()) roomV else (prefs.getString("room", "") ?: ""),
                     false, ok
                 )
-                hot(b, 0.41f, 0.50f, 0.80f, 0.62f, 0.5f) { ok(f.text.toString().trim()) }
+                hot(b, 0.17f, 0.52f, 0.87f, 0.61f, 0.5f) { ok(f.text.toString().trim()) }
             }
             4 -> {
                 val ok = { v: String ->
@@ -337,10 +337,10 @@ class StoryActivity : AppCompatActivity() {
                     doJoin()
                 }
                 val f = field(
-                    b, 0.38f, 0.25f, 0.71f, 0.355f, "۲ تا ۵",
+                    b, 0.23f, 0.31f, 0.79f, 0.38f, "۲ تا ۵",
                     prefs.getString("max", "5") ?: "5", true, ok
                 )
-                hot(b, 0.39f, 0.64f, 0.74f, 0.77f, 0.5f) { ok(f.text.toString().trim()) }
+                hot(b, 0.41f, 0.71f, 0.95f, 0.78f, 0.5f) { ok(f.text.toString().trim()) }
             }
         }
     }
