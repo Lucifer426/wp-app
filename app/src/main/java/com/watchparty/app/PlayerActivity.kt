@@ -460,7 +460,7 @@ class PlayerActivity : AppCompatActivity() {
         libVLC = vlc
         val mp = MediaPlayer(vlc)
         player = mp
-        mp.attachViews(video, null, true, false)
+        mp.attachViews(video, null, true, true)
 
         var dragging = false
         var reattached = false
@@ -512,7 +512,7 @@ class PlayerActivity : AppCompatActivity() {
                 h.postDelayed({
                     val t = mp.time
                     mp.detachViews()
-                    mp.attachViews(video, null, true, false)
+                    mp.attachViews(video, null, true, true)
                     if (t > 0) mp.time = t
                 }, 2500)
             }
