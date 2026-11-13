@@ -539,6 +539,7 @@ class PlayerActivity : AppCompatActivity() {
             if (u.isEmpty()) return
             curUrl = u
             val m = Media(vlc, Uri.parse(u))
+            if (compat) m.setHWDecoderEnabled(false, false)
             mp.media = m
             m.release()
             mp.play()
@@ -576,6 +577,7 @@ class PlayerActivity : AppCompatActivity() {
             mp.attachViews(video, null, true, !compat)
             if (curUrl.isNotEmpty()) {
                 val m = Media(vlc, Uri.parse(curUrl))
+                if (compat) m.setHWDecoderEnabled(false, false)
                 mp.media = m
                 m.release()
                 mp.play()
