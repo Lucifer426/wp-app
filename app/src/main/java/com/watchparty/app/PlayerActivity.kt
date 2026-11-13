@@ -46,11 +46,6 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
             field = v
             invalidate()
         }
-    var active = false
-        set(v) {
-            field = v
-            invalidate()
-        }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ic = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -69,7 +64,6 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
         val cx = width / 2f
         val cy = height / 2f
         val r = minOf(width, height) / 2f - 4f
-        fill.color = if (active) 0xFFD90429.toInt() else 0xCC0B0B0F.toInt()
         canvas.drawCircle(cx, cy, r, fill)
         canvas.drawCircle(cx, cy, r, ring)
         if (kind == 0 || kind == 2) {
@@ -90,15 +84,6 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
                 p.close()
                 canvas.drawPath(p, ic)
             }
-        } else if (kind in 5..8) {
-            ic.textSize = if (kind == 6) r * 0.42f else r * 0.55f
-            val label = when (kind) {
-                5 -> if (active) "SW" else "HW"
-                7 -> if (active) "SF" else "TX"
-                8 -> "FN"
-                else -> "SUB"
-            }
-            canvas.drawText(label, cx, cy + r * 0.2f, ic)
         } else if (kind == 4) {
             ic.style = Paint.Style.STROKE
             ic.strokeWidth = r * 0.16f
@@ -138,6 +123,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var waitView: TextView
     private var started = false
     private var lastBack = 0L
+    private var typing = false
+    private val allChat = ArrayList<Pair<String, String>>()
 
     private val hide = Runnable {
         controls.animate().cancel()
@@ -198,26 +185,41 @@ class PlayerActivity : AppCompatActivity() {
         else String.format("%02d:%02d", mi, se)
     }
 
+    private fun bubble(who: String, text: String): TextView {
+        val tv = TextView(this)
+        tv.setTextColor(0xFFFFFFFF.toInt())
+        val bg = GradientDrawable()
+        bg.setColor(0x99000000.toInt())
+        bg.cornerRadius = 28f
+        tv.background = bg
+        tv.setPadding(24, 10, 24, 10)
+        tv.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+        tv.text = if (who.isEmpty()) text else who + ": " + text
+        return tv
+    }
+
+    private fun addBubble(tv: TextView) {
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        lp.topMargin = 8
+        chatList.addView(tv, lp)
+        if (chatList.childCount > 40) chatList.removeViewAt(0)
+        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
     private fun addChat(who: String, text: String) {
         runOnUiThread {
-            val tv = TextView(this)
-            tv.setTextColor(0xFFFFFFFF.toInt())
-            val bg = GradientDrawable()
-            bg.setColor(0x99000000.toInt())
-            bg.cornerRadius = 28f
-            tv.background = bg
-            tv.setPadding(24, 10, 24, 10)
-            tv.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
-            tv.text = if (who.isEmpty()) text else who + ": " + text
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            lp.topMargin = 8
-            chatList.addView(tv, lp)
-            if (chatList.childCount > 40) chatList.removeViewAt(0)
-            chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
-            h.postDelayed({ chatList.removeView(tv) }, 8000)
+            allChat.add(Pair(who, text))
+            if (allChat.size > 100) allChat.removeAt(0)
+            if (typing) {
+                addBubble(bubble(who, text))
+            } else {
+                val tv = bubble(who, text)
+                addBubble(tv)
+                h.postDelayed({ chatList.removeView(tv) }, 8000)
+            }
         }
     }
 
@@ -238,23 +240,26 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun findArabicFont(): String? {
-        val dirs = listOf(
-            "/system/fonts", "/product/fonts",
-            "/system_ext/fonts", "/system/product/fonts"
-        )
-        var any: String? = null
-        for (d in dirs) {
-            val fs = java.io.File(d).listFiles() ?: continue
-            for (f in fs) {
-                val n = f.name.lowercase()
-                if (!n.endsWith(".ttf") && !n.endsWith(".otf")) continue
-                if (!n.contains("arabic")) continue
-                if (n.contains("regular")) return f.absolutePath
-                if (any == null) any = f.absolutePath
-            }
+    private fun openHistory() {
+        typing = true
+        chatList.removeAllViews()
+        val from = maxOf(0, allChat.size - 15)
+        for (i in from until allChat.size) {
+            addBubble(bubble(allChat[i].first, allChat[i].second))
         }
-        return any
+        chatScroll.animate().cancel()
+        chatScroll.alpha = 1f
+    }
+
+    private fun closeHistory() {
+        typing = false
+        chatScroll.animate().cancel()
+        chatScroll.animate().alpha(0f).setDuration(400).withEndAction {
+            if (!typing) {
+                chatList.removeAllViews()
+                chatScroll.alpha = 1f
+            }
+        }.start()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -338,34 +343,6 @@ class PlayerActivity : AppCompatActivity() {
         backLp.topMargin = 24
         backLp.leftMargin = 48
         ctl.addView(backBtn, backLp)
-
-        val compatBtn = IconBtn(this, 5)
-        val compatLp = FrameLayout.LayoutParams(80, 80)
-        compatLp.gravity = Gravity.TOP or Gravity.START
-        compatLp.topMargin = 24
-        compatLp.leftMargin = 152
-        ctl.addView(compatBtn, compatLp)
-
-        val subBtn = IconBtn(this, 6)
-        val subLp = FrameLayout.LayoutParams(80, 80)
-        subLp.gravity = Gravity.TOP or Gravity.START
-        subLp.topMargin = 24
-        subLp.leftMargin = 256
-        ctl.addView(subBtn, subLp)
-
-        val viewBtn = IconBtn(this, 7)
-        val viewLp = FrameLayout.LayoutParams(80, 80)
-        viewLp.gravity = Gravity.TOP or Gravity.START
-        viewLp.topMargin = 24
-        viewLp.leftMargin = 360
-        ctl.addView(viewBtn, viewLp)
-
-        val fontBtn = IconBtn(this, 8)
-        val fontLp = FrameLayout.LayoutParams(80, 80)
-        fontLp.gravity = Gravity.TOP or Gravity.START
-        fontLp.topMargin = 24
-        fontLp.leftMargin = 464
-        ctl.addView(fontBtn, fontLp)
 
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
@@ -506,7 +483,7 @@ class PlayerActivity : AppCompatActivity() {
             chatScroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                320
+                520
             )
         )
         val clp = FrameLayout.LayoutParams(
@@ -521,38 +498,24 @@ class PlayerActivity : AppCompatActivity() {
 
         val hist = Net.history
         if (hist != null) {
-            val from = maxOf(0, hist.length() - 5)
-            for (i in from until hist.length()) parseChat(hist.opt(i))
+            for (i in 0 until hist.length()) {
+                val o = hist.optJSONObject(i)
+                if (o != null) {
+                    allChat.add(
+                        Pair(o.optString("name", ""), o.optString("text", ""))
+                    )
+                }
+            }
         }
 
         val imm =
             getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
 
-        val prefs = getSharedPreferences("player", MODE_PRIVATE)
-        var compat = prefs.getBoolean("compat", false)
-        var useTex = prefs.getBoolean("tex", true)
-        var useFont = prefs.getBoolean("font", false)
-        var curUrl = ""
-
-        fun makeVlc(): LibVLC {
-            // Only the essential option is kept (same as default VLC behaviour).
-            // Removed: --freetype-rel-fontsize and --subsdec-encoding
-            val o = arrayListOf(
-                "--network-caching=3000"
-            )
-            if (compat) o.add("--avcodec-hw=none")
-            if (useFont) {
-                val f = findArabicFont()
-                if (f != null) o.add("--freetype-font=" + f)
-            }
-            return LibVLC(this, o)
-        }
-
-        var vlc = makeVlc()
+        val vlc = LibVLC(this, arrayListOf("--network-caching=3000"))
         libVLC = vlc
-        var mp = MediaPlayer(vlc)
+        val mp = MediaPlayer(vlc)
         player = mp
-        mp.attachViews(video, null, true, useTex)
+        mp.attachViews(video, null, true, false)
 
         var dragging = false
         var reattached = false
@@ -565,81 +528,23 @@ class PlayerActivity : AppCompatActivity() {
             flash.animate().alpha(0f).setStartDelay(400).setDuration(500).start()
         }
 
-        fun pickSub() {
-            try {
-                val tracks = mp.spuTracks ?: return
-                if (tracks.isEmpty()) return
-                if (mp.spuTrack != -1) return
-                var best = -1
-                for (t in tracks) {
-                    if (t.id == -1) continue
-                    val n = (t.name ?: "").lowercase()
-                    if (best == -1) best = t.id
-                    if (n.contains("fa") || n.contains("per") ||
-                        n.contains("فارسی")
-                    ) {
-                        best = t.id
-                        break
-                    }
-                }
-                if (best != -1) mp.spuTrack = best
-            } catch (e: Exception) {
-            }
-        }
-
         fun start(u: String) {
             if (u.isEmpty()) return
-            curUrl = u
             val m = Media(vlc, Uri.parse(u))
-            if (compat) m.setHWDecoderEnabled(false, false)
             mp.media = m
             m.release()
             mp.play()
             started = true
             waitView.visibility = View.GONE
             topBox.visibility = View.GONE
-            for (d in longArrayOf(2500, 5000, 9000, 15000, 25000)) {
-                h.postDelayed({ pickSub() }, d)
-            }
             if (host && !reattached) {
                 reattached = true
                 h.postDelayed({
                     val t = mp.time
                     mp.detachViews()
-                    mp.attachViews(video, null, true, useTex)
+                    mp.attachViews(video, null, true, false)
                     if (t > 0) mp.time = t
                 }, 2500)
-            }
-        }
-
-        fun rebuildPlayer() {
-            val wasPlaying = mp.isPlaying
-            val t = mp.time
-            try {
-                mp.stop()
-                mp.detachViews()
-                mp.release()
-                vlc.release()
-            } catch (e: Exception) {
-            }
-            vlc = makeVlc()
-            libVLC = vlc
-            mp = MediaPlayer(vlc)
-            player = mp
-            mp.attachViews(video, null, true, useTex)
-            if (curUrl.isNotEmpty()) {
-                val m = Media(vlc, Uri.parse(curUrl))
-                if (compat) m.setHWDecoderEnabled(false, false)
-                mp.media = m
-                m.release()
-                mp.play()
-                h.postDelayed({
-                    if (t > 0) mp.time = t
-                    if (!wasPlaying) mp.pause()
-                }, 2500)
-                for (d in longArrayOf(4000, 7000, 12000)) {
-                    h.postDelayed({ pickSub() }, d)
-                }
             }
         }
 
@@ -668,13 +573,6 @@ class PlayerActivity : AppCompatActivity() {
         val s = Net.socket
         s?.on("chat") { a -> parseChat(a.firstOrNull()) }
         s?.on("count") { a -> setCount(a.firstOrNull()) }
-        s?.on("history") { a ->
-            val x = a.firstOrNull()
-            if (x is JSONArray) {
-                val from = maxOf(0, x.length() - 5)
-                for (i in from until x.length()) parseChat(x.opt(i))
-            }
-        }
         if (!host) {
             s?.on("source") { a ->
                 val d = a.firstOrNull() as? JSONObject
@@ -710,97 +608,16 @@ class PlayerActivity : AppCompatActivity() {
             imm.hideSoftInputFromWindow(input.windowToken, 0)
             input.clearFocus()
             input.visibility = View.GONE
+            closeHistory()
         }
 
         backBtn.setOnClickListener { leave() }
-
-        compatBtn.active = compat
-        compatBtn.setOnClickListener {
-            compat = !compat
-            prefs.edit().putBoolean("compat", compat).apply()
-            compatBtn.active = compat
-            Toast.makeText(
-                this,
-                if (compat) "دیکودر: نرم‌افزاری (SW)" else "دیکودر: سخت‌افزاری (HW)",
-                Toast.LENGTH_SHORT
-            ).show()
-            allowBeat = false
-            rebuildPlayer()
-            h.postDelayed({ allowBeat = true }, 3500)
-            showControls()
-        }
-
-        viewBtn.active = !useTex
-        viewBtn.setOnClickListener {
-            useTex = !useTex
-            prefs.edit().putBoolean("tex", useTex).apply()
-            viewBtn.active = !useTex
-            Toast.makeText(
-                this,
-                if (useTex) "نمایش: TextureView (TX)" else "نمایش: SurfaceView (SF)",
-                Toast.LENGTH_SHORT
-            ).show()
-            allowBeat = false
-            rebuildPlayer()
-            h.postDelayed({ allowBeat = true }, 3500)
-            showControls()
-        }
-
-        fontBtn.active = useFont
-        fontBtn.setOnClickListener {
-            useFont = !useFont
-            prefs.edit().putBoolean("font", useFont).apply()
-            fontBtn.active = useFont
-            val f = if (useFont) findArabicFont() else null
-            Toast.makeText(
-                this,
-                if (!useFont) "فونت: پیش‌فرض"
-                else if (f == null) "فونت عربی توی گوشی پیدا نشد"
-                else "فونت: " + f.substringAfterLast('/'),
-                Toast.LENGTH_LONG
-            ).show()
-            allowBeat = false
-            rebuildPlayer()
-            h.postDelayed({ allowBeat = true }, 3500)
-            showControls()
-        }
-
-        subBtn.setOnClickListener {
-            try {
-                val all = mp.spuTracks
-                val list = all?.filter { it.id != -1 } ?: emptyList()
-                val mode = (if (compat) "SW" else "HW") +
-                    " / " + (if (useTex) "TX" else "SF")
-                if (list.isEmpty()) {
-                    Toast.makeText(
-                        this,
-                        "ترک زیرنویس: 0 ($mode)",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    val cur = mp.spuTrack
-                    val idx = list.indexOfFirst { it.id == cur }
-                    val next = if (idx + 1 < list.size) list[idx + 1] else null
-                    mp.spuTrack = next?.id ?: -1
-                    Toast.makeText(
-                        this,
-                        "ترک‌ها: " + list.size + " | قبل از لمس: " +
-                            (if (cur == -1) "خاموش" else "روشن") + " | حالا: " +
-                            (if (next == null) "خاموش شد" else "روشن شد") +
-                            " | " + mode,
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this, "خطا: " + e.message, Toast.LENGTH_LONG).show()
-            }
-            showControls()
-        }
 
         chatBtn.setOnClickListener {
             input.visibility = View.VISIBLE
             input.requestFocus()
             imm.showSoftInput(input, 0)
+            openHistory()
             showControls()
         }
 
