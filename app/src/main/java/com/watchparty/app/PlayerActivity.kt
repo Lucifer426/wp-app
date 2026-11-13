@@ -90,9 +90,13 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
                 p.close()
                 canvas.drawPath(p, ic)
             }
-        } else if (kind == 5 || kind == 6) {
-            ic.textSize = if (kind == 5) r * 0.55f else r * 0.42f
-            val label = if (kind == 5) (if (active) "SW" else "HW") else "SUB"
+        } else if (kind == 5 || kind == 6 || kind == 7) {
+            ic.textSize = if (kind == 6) r * 0.42f else r * 0.55f
+            val label = when (kind) {
+                5 -> if (active) "SW" else "HW"
+                7 -> if (active) "SF" else "TX"
+                else -> "SUB"
+            }
             canvas.drawText(label, cx, cy + r * 0.2f, ic)
         } else if (kind == 4) {
             ic.style = Paint.Style.STROKE
@@ -329,6 +333,13 @@ class PlayerActivity : AppCompatActivity() {
         subLp.leftMargin = 256
         ctl.addView(subBtn, subLp)
 
+        val viewBtn = IconBtn(this, 7)
+        val viewLp = FrameLayout.LayoutParams(80, 80)
+        viewLp.gravity = Gravity.TOP or Gravity.START
+        viewLp.topMargin = 24
+        viewLp.leftMargin = 360
+        ctl.addView(viewBtn, viewLp)
+
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
         val back = IconBtn(this, 0)
@@ -492,6 +503,7 @@ class PlayerActivity : AppCompatActivity() {
 
         val prefs = getSharedPreferences("player", MODE_PRIVATE)
         var compat = prefs.getBoolean("compat", false)
+        var useTex = prefs.getBoolean("tex", true)
         var curUrl = ""
 
         fun makeVlc(): LibVLC {
@@ -508,7 +520,7 @@ class PlayerActivity : AppCompatActivity() {
         libVLC = vlc
         var mp = MediaPlayer(vlc)
         player = mp
-        mp.attachViews(video, null, true, true)
+        mp.attachViews(video, null, true, useTex)
 
         var dragging = false
         var reattached = false
@@ -562,7 +574,7 @@ class PlayerActivity : AppCompatActivity() {
                 h.postDelayed({
                     val t = mp.time
                     mp.detachViews()
-                    mp.attachViews(video, null, true, true)
+                    mp.attachViews(video, null, true, useTex)
                     if (t > 0) mp.time = t
                 }, 2500)
             }
@@ -582,7 +594,7 @@ class PlayerActivity : AppCompatActivity() {
             libVLC = vlc
             mp = MediaPlayer(vlc)
             player = mp
-            mp.attachViews(video, null, true, true)
+            mp.attachViews(video, null, true, useTex)
             if (curUrl.isNotEmpty()) {
                 val m = Media(vlc, Uri.parse(curUrl))
                 if (compat) m.setHWDecoderEnabled(false, false)
@@ -686,11 +698,28 @@ class PlayerActivity : AppCompatActivity() {
             showControls()
         }
 
+        viewBtn.active = !useTex
+        viewBtn.setOnClickListener {
+            useTex = !useTex
+            prefs.edit().putBoolean("tex", useTex).apply()
+            viewBtn.active = !useTex
+            Toast.makeText(
+                this,
+                if (useTex) "نمایش: TextureView (TX)" else "نمایش: SurfaceView (SF)",
+                Toast.LENGTH_SHORT
+            ).show()
+            allowBeat = false
+            rebuildPlayer()
+            h.postDelayed({ allowBeat = true }, 3500)
+            showControls()
+        }
+
         subBtn.setOnClickListener {
             try {
                 val all = mp.spuTracks
                 val list = all?.filter { it.id != -1 } ?: emptyList()
-                val mode = if (compat) "SW" else "HW"
+                val mode = (if (compat) "SW" else "HW") +
+                    " / " + (if (useTex) "TX" else "SF")
                 if (list.isEmpty()) {
                     Toast.makeText(
                         this,
@@ -702,11 +731,12 @@ class PlayerActivity : AppCompatActivity() {
                     val idx = list.indexOfFirst { it.id == cur }
                     val next = if (idx + 1 < list.size) list[idx + 1] else null
                     mp.spuTrack = next?.id ?: -1
-                    val names = list.joinToString(" | ") { it.name ?: "?" }
                     Toast.makeText(
                         this,
-                        "ترک‌ها: " + list.size + " -> " + names +
-                            "\nالان: " + (next?.name ?: "خاموش") + " ($mode)",
+                        "ترک‌ها: " + list.size + " | قبل از لمس: " +
+                            (if (cur == -1) "خاموش" else "روشن") + " | حالا: " +
+                            (if (next == null) "خاموش شد" else "روشن شد") +
+                            " | " + mode,
                         Toast.LENGTH_LONG
                     ).show()
                 }
