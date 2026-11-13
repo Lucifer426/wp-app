@@ -535,10 +535,10 @@ class PlayerActivity : AppCompatActivity() {
         var curUrl = ""
 
         fun makeVlc(): LibVLC {
+            // Only the essential option is kept (same as default VLC behaviour).
+            // Removed: --freetype-rel-fontsize and --subsdec-encoding
             val o = arrayListOf(
-                "--network-caching=3000",
-                "--freetype-rel-fontsize=16",
-                "--subsdec-encoding=UTF-8"
+                "--network-caching=3000"
             )
             if (compat) o.add("--avcodec-hw=none")
             if (useFont) {
