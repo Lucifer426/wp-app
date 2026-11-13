@@ -90,9 +90,10 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
                 p.close()
                 canvas.drawPath(p, ic)
             }
-        } else if (kind == 5) {
-            ic.textSize = r * 0.55f
-            canvas.drawText("CC", cx, cy + r * 0.2f, ic)
+        } else if (kind == 5 || kind == 6) {
+            ic.textSize = if (kind == 5) r * 0.55f else r * 0.42f
+            val label = if (kind == 5) (if (active) "SW" else "HW") else "SUB"
+            canvas.drawText(label, cx, cy + r * 0.2f, ic)
         } else if (kind == 4) {
             ic.style = Paint.Style.STROKE
             ic.strokeWidth = r * 0.16f
@@ -321,6 +322,13 @@ class PlayerActivity : AppCompatActivity() {
         compatLp.leftMargin = 152
         ctl.addView(compatBtn, compatLp)
 
+        val subBtn = IconBtn(this, 6)
+        val subLp = FrameLayout.LayoutParams(80, 80)
+        subLp.gravity = Gravity.TOP or Gravity.START
+        subLp.topMargin = 24
+        subLp.leftMargin = 256
+        ctl.addView(subBtn, subLp)
+
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
         val back = IconBtn(this, 0)
@@ -500,7 +508,7 @@ class PlayerActivity : AppCompatActivity() {
         libVLC = vlc
         var mp = MediaPlayer(vlc)
         player = mp
-        mp.attachViews(video, null, true, !compat)
+        mp.attachViews(video, null, true, true)
 
         var dragging = false
         var reattached = false
@@ -554,7 +562,7 @@ class PlayerActivity : AppCompatActivity() {
                 h.postDelayed({
                     val t = mp.time
                     mp.detachViews()
-                    mp.attachViews(video, null, true, !compat)
+                    mp.attachViews(video, null, true, true)
                     if (t > 0) mp.time = t
                 }, 2500)
             }
@@ -574,7 +582,7 @@ class PlayerActivity : AppCompatActivity() {
             libVLC = vlc
             mp = MediaPlayer(vlc)
             player = mp
-            mp.attachViews(video, null, true, !compat)
+            mp.attachViews(video, null, true, true)
             if (curUrl.isNotEmpty()) {
                 val m = Media(vlc, Uri.parse(curUrl))
                 if (compat) m.setHWDecoderEnabled(false, false)
@@ -669,12 +677,42 @@ class PlayerActivity : AppCompatActivity() {
             compatBtn.active = compat
             Toast.makeText(
                 this,
-                if (compat) "حالت سازگار روشن شد" else "حالت سازگار خاموش شد",
+                if (compat) "دیکودر: نرم‌افزاری (SW)" else "دیکودر: سخت‌افزاری (HW)",
                 Toast.LENGTH_SHORT
             ).show()
             allowBeat = false
             rebuildPlayer()
             h.postDelayed({ allowBeat = true }, 3500)
+            showControls()
+        }
+
+        subBtn.setOnClickListener {
+            try {
+                val all = mp.spuTracks
+                val list = all?.filter { it.id != -1 } ?: emptyList()
+                val mode = if (compat) "SW" else "HW"
+                if (list.isEmpty()) {
+                    Toast.makeText(
+                        this,
+                        "ترک زیرنویس: 0 ($mode)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    val cur = mp.spuTrack
+                    val idx = list.indexOfFirst { it.id == cur }
+                    val next = if (idx + 1 < list.size) list[idx + 1] else null
+                    mp.spuTrack = next?.id ?: -1
+                    val names = list.joinToString(" | ") { it.name ?: "?" }
+                    Toast.makeText(
+                        this,
+                        "ترک‌ها: " + list.size + " -> " + names +
+                            "\nالان: " + (next?.name ?: "خاموش") + " ($mode)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "خطا: " + e.message, Toast.LENGTH_LONG).show()
+            }
             showControls()
         }
 
