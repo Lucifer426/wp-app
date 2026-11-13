@@ -90,11 +90,12 @@ class IconBtn(c: Context, private val kind: Int) : View(c) {
                 p.close()
                 canvas.drawPath(p, ic)
             }
-        } else if (kind == 5 || kind == 6 || kind == 7) {
+        } else if (kind in 5..8) {
             ic.textSize = if (kind == 6) r * 0.42f else r * 0.55f
             val label = when (kind) {
                 5 -> if (active) "SW" else "HW"
                 7 -> if (active) "SF" else "TX"
+                8 -> "FN"
                 else -> "SUB"
             }
             canvas.drawText(label, cx, cy + r * 0.2f, ic)
@@ -237,6 +238,25 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun findArabicFont(): String? {
+        val dirs = listOf(
+            "/system/fonts", "/product/fonts",
+            "/system_ext/fonts", "/system/product/fonts"
+        )
+        var any: String? = null
+        for (d in dirs) {
+            val fs = java.io.File(d).listFiles() ?: continue
+            for (f in fs) {
+                val n = f.name.lowercase()
+                if (!n.endsWith(".ttf") && !n.endsWith(".otf")) continue
+                if (!n.contains("arabic")) continue
+                if (n.contains("regular")) return f.absolutePath
+                if (any == null) any = f.absolutePath
+            }
+        }
+        return any
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -339,6 +359,13 @@ class PlayerActivity : AppCompatActivity() {
         viewLp.topMargin = 24
         viewLp.leftMargin = 360
         ctl.addView(viewBtn, viewLp)
+
+        val fontBtn = IconBtn(this, 8)
+        val fontLp = FrameLayout.LayoutParams(80, 80)
+        fontLp.gravity = Gravity.TOP or Gravity.START
+        fontLp.topMargin = 24
+        fontLp.leftMargin = 464
+        ctl.addView(fontBtn, fontLp)
 
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
@@ -504,6 +531,7 @@ class PlayerActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("player", MODE_PRIVATE)
         var compat = prefs.getBoolean("compat", false)
         var useTex = prefs.getBoolean("tex", true)
+        var useFont = prefs.getBoolean("font", false)
         var curUrl = ""
 
         fun makeVlc(): LibVLC {
@@ -513,6 +541,10 @@ class PlayerActivity : AppCompatActivity() {
                 "--subsdec-encoding=UTF-8"
             )
             if (compat) o.add("--avcodec-hw=none")
+            if (useFont) {
+                val f = findArabicFont()
+                if (f != null) o.add("--freetype-font=" + f)
+            }
             return LibVLC(this, o)
         }
 
@@ -707,6 +739,25 @@ class PlayerActivity : AppCompatActivity() {
                 this,
                 if (useTex) "نمایش: TextureView (TX)" else "نمایش: SurfaceView (SF)",
                 Toast.LENGTH_SHORT
+            ).show()
+            allowBeat = false
+            rebuildPlayer()
+            h.postDelayed({ allowBeat = true }, 3500)
+            showControls()
+        }
+
+        fontBtn.active = useFont
+        fontBtn.setOnClickListener {
+            useFont = !useFont
+            prefs.edit().putBoolean("font", useFont).apply()
+            fontBtn.active = useFont
+            val f = if (useFont) findArabicFont() else null
+            Toast.makeText(
+                this,
+                if (!useFont) "فونت: پیش‌فرض"
+                else if (f == null) "فونت عربی توی گوشی پیدا نشد"
+                else "فونت: " + f.substringAfterLast('/'),
+                Toast.LENGTH_LONG
             ).show()
             allowBeat = false
             rebuildPlayer()
